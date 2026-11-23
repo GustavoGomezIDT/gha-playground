@@ -1,0 +1,7 @@
+{
+  "project": "pos-cr",
+  "final_branch": "master",
+  "tag_prefix": "v",
+  "initial_version": "0.0.0",
+  "github_release": true
+}
