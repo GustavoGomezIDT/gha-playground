@@ -10,5 +10,5 @@ export function cartTotal(items, taxRate = 0) {
 }
 
 export function tip(total, percentage = 10) {
-  return (total * percentage) / 100;
+  return total * (percentage / 100);
 } 
