@@ -18,9 +18,9 @@
 #   GH_TOKEN + GITHUB_REPOSITORY  (set in Actions) enable the GitHub branch-rename API
 #                     and GitHub Releases.
 #
-# Naming (with project "pos-cr", tag_prefix "v"):
-#   RC branch       pos-cr-1.4.0-RC0, pos-cr-1.4.0-RC1, ...
-#   release branch  pos-cr-1.4.0-release   (the RC branch, renamed on promote)
+# Naming (with project "pos-cr", tag_prefix "v", branch_prefix "release/"):
+#   RC branch       release/pos-cr-1.4.0-RC0, release/pos-cr-1.4.0-RC1, ...
+#   release branch  release/pos-cr-1.4.0-release   (the RC branch, renamed on promote)
 #   RC tag          pos-cr-v1.4.0-RC0, pos-cr-v1.4.0-RC1, ...
 #   final tag       pos-cr-v1.4.0
 # Tags carry the prefix so a tag never has the same name as a branch (git treats that as ambiguous).
@@ -46,14 +46,17 @@ if [[ ! -f "$CONFIG" ]]; then
   available="$(cd "$cfg_dir" 2>/dev/null && ls -1 -- *.json 2>/dev/null | sed 's/\.json$//' | paste -sd, - || true)"
   die "config file not found: $CONFIG (configs in $cfg_dir: ${available:-none}). Add the file, or fix the project list in release.yml"
 fi
-read_key() { # read_key <key> [default]   reads JSON from stdin; empty default + missing key = error
+read_key() { # read_key <key> [default]   reads JSON from stdin
+  # Absent key -> default (error if no default). "" is kept as-is for optional keys
+  # (e.g. branch_prefix: "" turns the prefix off) and is an error for required ones.
   node -e '
     const c = JSON.parse(require("fs").readFileSync(0, "utf8"));
-    const v = c[process.argv[1]];
-    if (v === undefined || v === null || v === "") {
-      if (process.argv.length > 2) { console.log(process.argv[2]); process.exit(0); }
+    const v = c[process.argv[1]], hasDefault = process.argv.length > 2;
+    if (v === undefined || v === null) {
+      if (hasDefault) { console.log(process.argv[2]); process.exit(0); }
       console.error("missing config key: " + process.argv[1]); process.exit(1);
     }
+    if (v === "" && !hasDefault) { console.error("empty config key: " + process.argv[1]); process.exit(1); }
     console.log(v);' "$@"
 }
 cfg() { read_key "$@" < "$CONFIG"; }
@@ -61,6 +64,7 @@ cfg() { read_key "$@" < "$CONFIG"; }
 PROJECT="$(cfg project)"
 FINAL="$(cfg final_branch)"
 TAG_PREFIX="$(cfg tag_prefix v)"
+BRANCH_PREFIX="$(cfg branch_prefix release/)"
 GH_RELEASE="$(cfg github_release false)"
 MILESTONE="${MILESTONE_BRANCH:-}"
 
@@ -69,10 +73,13 @@ MILESTONE="${MILESTONE_BRANCH:-}"
   || die "$CONFIG has \"project\": \"$PROJECT\"; the file must be named $PROJECT.json"
 # A non-empty prefix keeps tag names (pos-cr-v1.4.0) different from branch names (pos-cr-1.4.0-...).
 [[ "$TAG_PREFIX" =~ ^[A-Za-z._-]+$ ]] || die "tag_prefix must be letters/._- (got '$TAG_PREFIX')"
+# Branch namespace, e.g. "release/" -> release/pos-cr-1.4.0-RC0. "" means no prefix.
+[[ -z "$BRANCH_PREFIX" || "$BRANCH_PREFIX" =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/$ ]] \
+  || die "branch_prefix must be empty or look like 'release/' (got '$BRANCH_PREFIX')"
 
 is_semver()     { [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; }
-branch_name()   { echo "${PROJECT}-$1-RC$2"; }             # version rc
-release_branch(){ echo "${PROJECT}-$1-release"; }          # version
+branch_name()   { echo "${BRANCH_PREFIX}${PROJECT}-$1-RC$2"; }     # version rc
+release_branch(){ echo "${BRANCH_PREFIX}${PROJECT}-$1-release"; }  # version
 rc_tag()        { echo "${PROJECT}-${TAG_PREFIX}$1-RC$2"; } # version rc
 release_tag()   { echo "${PROJECT}-${TAG_PREFIX}$1"; }      # version
 
@@ -113,7 +120,7 @@ bump() { # bump <X.Y.Z> <major|minor|patch>
 find_open_rc() {
   local want="${1:-}" b rest versions=() lines=() v n
   while read -r b; do
-    rest="${b#"${PROJECT}-"}"
+    rest="${b#"${BRANCH_PREFIX}${PROJECT}-"}"
     [[ "$rest" != "$b" && "$rest" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-RC([0-9]+)$ ]] || continue
     v="${BASH_REMATCH[1]}"; n="${BASH_REMATCH[2]}"
     tag_exists "$(release_tag "$v")" && continue
@@ -193,7 +200,8 @@ github_release() { # github_release <tag> <prerelease true|false>
 rename_branch() { # rename_branch <old> <new>
   if gh_available; then
     # GitHub's rename keeps open PRs and branch protection pointed at the branch.
-    run gh api -X POST "repos/${GITHUB_REPOSITORY}/branches/$1/rename" -f new_name="$2" --silent
+    # Branch names with "/" (release/...) must be URL-encoded in the API path.
+    run gh api -X POST "repos/${GITHUB_REPOSITORY}/branches/${1//\//%2F}/rename" -f new_name="$2" --silent
   else
     run git push --atomic origin "refs/remotes/origin/$1:refs/heads/$2" ":refs/heads/$1"
   fi
@@ -226,7 +234,7 @@ case "$ACTION" in
 
     tag_exists "$(release_tag "$version")" && die "$version is already released"
     tag_exists "$tag" && die "tag $tag already exists"
-    for b in $(git for-each-ref --format='%(refname:strip=3)' "refs/remotes/origin/${PROJECT}-${version}-RC*"); do
+    for b in $(git for-each-ref --format='%(refname:strip=3)' "refs/remotes/origin/${BRANCH_PREFIX}${PROJECT}-${version}-RC*"); do
       die "an RC branch for $version already exists: $b (use 'fix' or 'promote')"
     done
 

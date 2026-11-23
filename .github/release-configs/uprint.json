@@ -2,6 +2,7 @@
   "project": "uprint",
   "final_branch": "master",
   "tag_prefix": "v",
+  "branch_prefix": "release/",
   "version": "0.0.0",
   "github_release": true
 }
