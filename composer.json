@@ -1,0 +1,11 @@
+{
+    "name": "playground/gha-playground",
+    "description": "Sandbox for learning GitHub Actions",
+    "require-dev": {
+        "squizlabs/php_codesniffer": "^4.0"
+    },
+    "scripts": {
+        "lint": "phpcs",
+        "lint:fix": "phpcbf"
+    }
+}

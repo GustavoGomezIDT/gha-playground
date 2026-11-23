@@ -1,0 +1,58 @@
+# A manual workflow for poking at Actions concepts. Run it from:
+#   Actions tab -> "Hello Actions" -> Run workflow
+name: Hello Actions
+
+on:
+  workflow_dispatch:
+    inputs:
+      who:
+        description: 'Who to greet'
+        required: true
+        default: 'world'
+        type: string
+      shout:
+        description: 'Uppercase the greeting?'
+        type: boolean
+        default: false
+
+env:                         # workflow-level env, visible to every job
+  GREETING: Hello
+
+jobs:
+  build-message:
+    runs-on: ubuntu-latest
+    outputs:                 # expose a step output to later jobs
+      message: ${{ steps.msg.outputs.message }}
+    steps:
+      - name: Show some contexts
+        run: |
+          echo "Event:      ${{ github.event_name }}"
+          echo "Branch/ref: ${{ github.ref_name }}"
+          echo "Commit:     ${{ github.sha }}"
+          echo "Actor:      ${{ github.actor }}"
+          echo "Runner OS:  ${{ runner.os }}"
+
+      - name: Build the message
+        id: msg
+        env:                 # pass inputs via env, never paste them straight into a script
+          WHO: ${{ inputs.who }}
+          SHOUT: ${{ inputs.shout }}
+        run: |
+          msg="$GREETING, $WHO!"
+          if [ "$SHOUT" = "true" ]; then msg="${msg^^}"; fi
+          echo "message=$msg" >> "$GITHUB_OUTPUT"
+
+  report:
+    needs: build-message     # waits for build-message; can read its outputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write a job summary
+        env:
+          MESSAGE: ${{ needs.build-message.outputs.message }}
+        run: |
+          echo "### $MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          echo "Produced by run #${{ github.run_number }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Only runs when shouting
+        if: ${{ inputs.shout }}
+        run: echo "Somebody asked for SHOUTING."
