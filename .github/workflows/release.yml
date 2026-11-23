@@ -1,12 +1,19 @@
 # Release candidates and promotion, driven by a per-project config file.
-# Run from: Actions -> Release -> Run workflow
+# Run from: Actions -> Release -> Run workflow.  Full guide: .github/RELEASING.md
 name: Release
 
 on:
   workflow_dispatch:
     inputs:
+      project:
+        description: 'Project to release (config: .github/release-configs/<project>.json)'
+        type: choice
+        # GitHub needs this list written out: add one line per file in .github/release-configs/
+        options:
+          - uprint
+        required: true
       action:
-        description: 'rc = new RC0 from milestone | fix = next RC on the open RC branch | promote = tag RC as final release'
+        description: 'rc = new RC0 from milestone | fix = next RC on the open RC branch | promote = tag RC as final release, rename branch to project-version-release'
         type: choice
         options: [rc, fix, promote]
         required: true
@@ -23,18 +30,14 @@ on:
         description: 'X.Y.Z of the RC to act on (fix/promote; only needed if several RCs are open)'
         type: string
         required: false
-      config:
-        description: 'Release config file'
-        type: string
-        default: '.github/release-config.json'
       dry_run:
         description: 'Print what would change, push nothing'
         type: boolean
         default: false
 
-# Never run two releases for the same config at once; queue instead of cancelling.
+# Never run two releases for the same project at once; queue instead of cancelling.
 concurrency:
-  group: release-${{ inputs.config }}
+  group: release-${{ inputs.project }}
   cancel-in-progress: false
 
 permissions:
@@ -56,7 +59,7 @@ jobs:
       - name: Run release
         env:
           GH_TOKEN: ${{ github.token }}
-          CONFIG: ${{ inputs.config }}
+          CONFIG: .github/release-configs/${{ inputs.project }}.json
           MILESTONE_BRANCH: ${{ inputs.milestone_branch }}
           DRY_RUN: ${{ inputs.dry_run }}
           ACTION: ${{ inputs.action }}
